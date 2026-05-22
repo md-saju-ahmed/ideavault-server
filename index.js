@@ -409,6 +409,40 @@ async function run() {
       }
     });
 
+    // Like/Unlike
+    app.post("/ideas/:id/like", verifyToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        const userId = req.user.id;
+        if (!ObjectId.isValid(id))
+          return res.status(400).json({ message: "Invalid ID" });
+
+        const idea = await ideaCollection.findOne({ _id: new ObjectId(id) });
+        if (!idea) return res.status(404).json({ message: "Idea not found" });
+
+        const likedBy = idea.likes?.likedBy || [];
+        const alreadyLiked = likedBy.includes(userId);
+        const update = alreadyLiked
+          ? {
+              $inc: { "likes.count": -1 },
+              $pull: { "likes.likedBy": userId },
+            }
+          : {
+              $inc: { "likes.count": 1 },
+              $addToSet: { "likes.likedBy": userId },
+            };
+
+        await ideaCollection.updateOne({ _id: new ObjectId(id) }, update);
+        const updated = await ideaCollection.findOne({ _id: new ObjectId(id) });
+        res.json({
+          likes: updated.likes.count,
+          liked: !alreadyLiked,
+        });
+      } catch {
+        res.status(500).json({ message: "Like failed" });
+      }
+    });
+
     console.log("MongoDB connected successfully");
   } catch (err) {
     console.error("Failed to connect to MongoDB:", err);
