@@ -228,6 +228,187 @@ async function run() {
       res.json(updatedUser);
     });
 
+    // Ideas
+    app.get("/ideas", async (req, res) => {
+      try {
+        const {
+          search,
+          category,
+          page = 1,
+          limit = 9,
+          sort = "newest",
+        } = req.query;
+
+        const filter = {};
+
+        if (search?.trim()) {
+          filter.ideaTitle = {
+            $regex: search.trim(),
+            $options: "i",
+          };
+        }
+
+        if (category && category !== "All") {
+          filter.category = category;
+        }
+
+        let sortQuery = { createdAt: -1 };
+
+        if (sort === "oldest") {
+          sortQuery = { createdAt: 1 };
+        }
+
+        if (sort === "mostLiked") {
+          sortQuery = { "likes.count": -1 };
+        }
+
+        const skip = (Number(page) - 1) * Number(limit);
+
+        const total = await ideaCollection.countDocuments(filter);
+
+        const data = await ideaCollection
+          .find(filter)
+          .sort(sortQuery)
+          .skip(skip)
+          .limit(Number(limit))
+          .toArray();
+
+        res.json({
+          data,
+          total,
+          page: Number(page),
+          limit: Number(limit),
+        });
+      } catch {
+        res.status(500).json({
+          message: "Failed to fetch ideas",
+        });
+      }
+    });
+
+    app.get("/ideas/my", verifyToken, async (req, res) => {
+      const ideas = await ideaCollection
+        .find({ userId: req.user.id })
+        .sort({ createdAt: -1 })
+        .toArray();
+      res.json(ideas);
+    });
+
+    app.get("/ideas/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!ObjectId.isValid(id))
+          return res.status(400).json({ message: "Invalid ID" });
+
+        const idea = await ideaCollection.findOne({ _id: new ObjectId(id) });
+        if (!idea) return res.status(404).json({ message: "Idea not found" });
+
+        const author = await userCollection.findOne({
+          _id: new ObjectId(idea.userId),
+        });
+        res.json({
+          ...idea,
+          author: author
+            ? {
+                name: author.name,
+                email: author.email,
+                photoURL: author.photoURL,
+              }
+            : null,
+        });
+      } catch (err) {
+        res.status(500).json({
+          message: "Failed to fetch idea",
+          error: err.message,
+        });
+      }
+    });
+
+    app.post("/ideas", verifyToken, async (req, res) => {
+      try {
+        const idea = {
+          userId: req.user.id,
+          ideaTitle: req.body.ideaTitle,
+          shortDescription: req.body.shortDescription,
+          detailedDescription: req.body.detailedDescription,
+          category: req.body.category,
+          imageURL: req.body.imageURL || "",
+          targetAudience: req.body.targetAudience || "",
+          tags: req.body.tags || [],
+          estimatedBudget: req.body.estimatedBudget || 0,
+          problemStatement: req.body.problemStatement || "",
+          proposedSolution: req.body.proposedSolution || "",
+          likes: { count: 0, likedBy: [] },
+          commentsCount: 0,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        const result = await ideaCollection.insertOne(idea);
+        res.json(result);
+      } catch {
+        res.status(500).json({ message: "Failed to create idea" });
+      }
+    });
+
+    app.patch("/ideas/:id", verifyToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!ObjectId.isValid(id))
+          return res.status(400).json({ message: "Invalid ID" });
+
+        const idea = await ideaCollection.findOne({ _id: new ObjectId(id) });
+        if (!idea) return res.status(404).json({ message: "Idea not found" });
+        if (idea.userId !== req.user.id)
+          return res.status(403).json({ message: "Not allowed" });
+
+        const allowed = [
+          "ideaTitle",
+          "shortDescription",
+          "detailedDescription",
+          "category",
+          "imageURL",
+          "targetAudience",
+          "tags",
+          "estimatedBudget",
+          "problemStatement",
+          "proposedSolution",
+        ];
+        const updateData = {};
+        allowed.forEach((f) => {
+          if (req.body[f] !== undefined) updateData[f] = req.body[f];
+        });
+        updateData.updatedAt = new Date();
+
+        await ideaCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updateData },
+        );
+        const updated = await ideaCollection.findOne({ _id: new ObjectId(id) });
+        res.json(updated);
+      } catch {
+        res.status(500).json({ message: "Failed to update idea" });
+      }
+    });
+
+    app.delete("/ideas/:id", verifyToken, async (req, res) => {
+      try {
+        const { id } = req.params;
+        if (!ObjectId.isValid(id))
+          return res.status(400).json({ message: "Invalid ID" });
+
+        const idea = await ideaCollection.findOne({ _id: new ObjectId(id) });
+        if (!idea) return res.status(404).json({ message: "Idea not found" });
+        if (idea.userId !== req.user.id)
+          return res.status(403).json({ message: "Not allowed" });
+
+        await ideaCollection.deleteOne({ _id: new ObjectId(id) });
+        await commentCollection.deleteMany({ ideaId: id });
+        res.json({ success: true });
+      } catch {
+        res.status(500).json({ message: "Failed to delete idea" });
+      }
+    });
+
     console.log("MongoDB connected successfully");
   } catch (err) {
     console.error("Failed to connect to MongoDB:", err);
