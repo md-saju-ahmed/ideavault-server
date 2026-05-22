@@ -148,7 +148,7 @@ app.get("/auth/google/callback", async (req, res) => {
 // server run function
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     // Auth (email/password)
     app.post("/auth/register", async (req, res) => {
