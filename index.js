@@ -204,6 +204,30 @@ async function run() {
       }
     });
 
+    // Users
+    app.get("/users/me", verifyToken, async (req, res) => {
+      const user = await userCollection.findOne({
+        _id: new ObjectId(req.user.id),
+      });
+      res.json(user);
+    });
+
+    app.patch("/users/me", verifyToken, async (req, res) => {
+      await userCollection.updateOne(
+        { _id: new ObjectId(req.user.id) },
+        {
+          $set: {
+            name: req.body.name,
+            photoURL: req.body.photoURL,
+          },
+        },
+      );
+      const updatedUser = await userCollection.findOne({
+        _id: new ObjectId(req.user.id),
+      });
+      res.json(updatedUser);
+    });
+
     console.log("MongoDB connected successfully");
   } catch (err) {
     console.error("Failed to connect to MongoDB:", err);
