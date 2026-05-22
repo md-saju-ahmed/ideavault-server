@@ -8,7 +8,7 @@ It handles authentication, Google OAuth login, idea management, comments, and li
 ## Live API
 
 ```bash
-
+https://ideavault-server-liart.vercel.app
 ```
 
 ---
