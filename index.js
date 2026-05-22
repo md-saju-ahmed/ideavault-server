@@ -443,6 +443,115 @@ async function run() {
       }
     });
 
+    // Comments
+    app.get("/comments/my", verifyToken, async (req, res) => {
+      try {
+        const comments = await commentCollection
+          .find({ userId: req.user.id })
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.json(comments);
+      } catch {
+        res.status(500).json({ message: "Failed to load your comments" });
+      }
+    });
+
+    app.get("/comments/:ideaId", async (req, res) => {
+      try {
+        const comments = await commentCollection
+          .find({ ideaId: req.params.ideaId })
+          .sort({ createdAt: -1 })
+          .toArray();
+        res.json(comments);
+      } catch {
+        res.status(500).json({ message: "Failed to load comments" });
+      }
+    });
+
+    app.post("/comments", verifyToken, async (req, res) => {
+      try {
+        const { ideaId, commentText } = req.body;
+        if (!ideaId || !commentText)
+          return res
+            .status(400)
+            .json({ message: "ideaId and commentText are required" });
+
+        const author = await userCollection.findOne({
+          _id: new ObjectId(req.user.id),
+        });
+        const comment = {
+          ideaId,
+          userId: req.user.id,
+          authorName: author?.name || "",
+          authorPhotoURL: author?.photoURL || "",
+          commentText,
+          createdAt: new Date(),
+          updatedAt: null,
+        };
+
+        const result = await commentCollection.insertOne(comment);
+        await ideaCollection.updateOne(
+          { _id: new ObjectId(ideaId) },
+          { $inc: { commentsCount: 1 } },
+        );
+        const created = await commentCollection.findOne({
+          _id: result.insertedId,
+        });
+        res.json(created);
+      } catch {
+        res.status(500).json({ message: "Failed to add comment" });
+      }
+    });
+
+    app.patch("/comments/:id", verifyToken, async (req, res) => {
+      try {
+        const result = await commentCollection.updateOne(
+          {
+            _id: new ObjectId(req.params.id),
+            userId: req.user.id,
+          },
+          {
+            $set: {
+              commentText: req.body.commentText,
+              updatedAt: new Date(),
+            },
+          },
+        );
+        if (result.matchedCount === 0)
+          return res
+            .status(403)
+            .json({ message: "Not allowed or comment not found" });
+
+        const updated = await commentCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+        res.json(updated);
+      } catch {
+        res.status(500).json({ message: "Failed to update comment" });
+      }
+    });
+
+    app.delete("/comments/:id", verifyToken, async (req, res) => {
+      try {
+        const comment = await commentCollection.findOne({
+          _id: new ObjectId(req.params.id),
+        });
+        if (!comment)
+          return res.status(404).json({ message: "Comment not found" });
+        if (comment.userId !== req.user.id)
+          return res.status(403).json({ message: "Not allowed" });
+
+        await commentCollection.deleteOne({ _id: new ObjectId(req.params.id) });
+        await ideaCollection.updateOne(
+          { _id: new ObjectId(comment.ideaId), commentsCount: { $gt: 0 } },
+          { $inc: { commentsCount: -1 } },
+        );
+        res.json({ success: true });
+      } catch {
+        res.status(500).json({ message: "Failed to delete comment" });
+      }
+    });
+
     console.log("MongoDB connected successfully");
   } catch (err) {
     console.error("Failed to connect to MongoDB:", err);
